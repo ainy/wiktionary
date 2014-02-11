@@ -5,12 +5,12 @@ from collections import defaultdict
 from timeit import timeit
 import re
 
-TAG_PREFIX = "{http://www.mediawiki.org/xml/export-0.4/}"
+TAG_PREFIX = "{http://www.mediawiki.org/xml/export-0.8/}"
 TERM_TABLE_NAME = "temp_dict"
 DEF_TABLE_NAME = "temp_def"
 
 def extract_dictionary():
-    filename = "enwiktionary-20100824-pages-articles.xml"
+    filename = "ruwiktionary-latest-pages-articles.xml"
     context = etree.iterparse(filename)
     count = 0
     current_thing = defaultdict(str)
@@ -22,10 +22,10 @@ def extract_dictionary():
 
         if event == 'end':
             current_thing[elem.tag.replace(TAG_PREFIX, '')] = elem.text
-                
+            print elem.tag
             if elem.tag == TAG_PREFIX+"page":
                 if current_thing['text']:
-                    if "# " in current_thing['text'] and "{{en-" in current_thing['text']:
+                    if "# " in current_thing['text']:
                         count += 1
                         yield {
                             'term' : current_thing['title'].encode('utf-8'),
@@ -63,7 +63,7 @@ def create_sql_tables():
     return outstr
 
 if __name__ == "__main__":
-    filename = "enwiktionary-20100824-pages-articles.xml"
+    filename = "ruwiktionary-latest-pages-articles.xml"
     try:
         filename = sys.argv[1]
     except Exception, e:
