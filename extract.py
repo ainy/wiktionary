@@ -1,28 +1,22 @@
 #!/usr/bin/env python
+#coding: utf-8
 from lxml import etree
-import sys
 from collections import defaultdict
-from timeit import timeit
-import re
+import sys, re
 
 TAG_PREFIX = "{http://www.mediawiki.org/xml/export-0.8/}"
 TERM_TABLE_NAME = "temp_dict"
 DEF_TABLE_NAME = "temp_def"
 
-def extract_dictionary():
-    filename = "ruwiktionary-latest-pages-articles.xml"
+def extract_dictionary(filename):
     context = etree.iterparse(filename)
     count = 0
     current_thing = defaultdict(str)
     results = []
     defre = re.compile("# .*")
     for event, elem in context:
-
-        #if count > 500: raise StopIteration()
-
         if event == 'end':
             current_thing[elem.tag.replace(TAG_PREFIX, '')] = elem.text
-            print elem.tag
             if elem.tag == TAG_PREFIX+"page":
                 if current_thing['text']:
                     if "# " in current_thing['text']:
@@ -63,16 +57,13 @@ def create_sql_tables():
     return outstr
 
 if __name__ == "__main__":
-    filename = "ruwiktionary-latest-pages-articles.xml"
     try:
         filename = sys.argv[1]
     except Exception, e:
-        pass
+        filename = "ruwiktionary-latest-pages-articles.xml"
     outfile = open('out.sql','w')
 
     outfile.write(create_sql_tables())
-    print "begin"
-    for d in extract_dictionary():
+    for d in extract_dictionary(filename):
         outfile.write(sqlify(d))
     outfile.close()
-    print "done"
