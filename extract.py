@@ -1,69 +1,76 @@
 #!/usr/bin/env python
 #coding: utf-8
+from __future__ import print_function, unicode_literals
 from lxml import etree
 from collections import defaultdict
 import sys, re
+import sqlite3
 
 TAG_PREFIX = "{http://www.mediawiki.org/xml/export-0.8/}"
-TERM_TABLE_NAME = "temp_dict"
-DEF_TABLE_NAME = "temp_def"
+
+def split_sections(text, n=1):
+  a = re.split('\n\s*%s ([^=]*) %s\s*\n'%('='*n,'='*n),'\n'+text)
+  if len(a)>2:
+    return dict(zip(a[1::2], [split_sections(t, n+1) or t for t in a[2::2]]))
+
 
 def extract_dictionary(filename):
     context = etree.iterparse(filename)
-    count = 0
     current_thing = defaultdict(str)
-    results = []
-    defre = re.compile("# .*")
     for event, elem in context:
         if event == 'end':
             current_thing[elem.tag.replace(TAG_PREFIX, '')] = elem.text
             if elem.tag == TAG_PREFIX+"page":
                 if current_thing['text']:
-                    if "# " in current_thing['text']:
-                        count += 1
-                        yield {
-                            'term' : current_thing['title'].encode('utf-8'),
-                            'count' : count,
-                            'definitions' : defre.findall(current_thing['text'].encode('utf-8'))
-                            }
-                    del current_thing
+                    yield current_thing
                     current_thing = defaultdict(str)
                 while elem.getparent() is not None:
                     del elem.getparent()[0]
 
-def sqlify(record):
-    global TERM_TABLE_NAME, DEF_TABLE_NAME
-    outstr = "INSERT INTO %s (id, term) VALUES (%d, '%s');\n" % (
-        TERM_TABLE_NAME,
-        record['count'],
-        record['term'].replace("'", "\\'"),
-        )
-    for definition in record['definitions']:
-        outstr += "INSERT INTO %s (id, term_id, definition) VALUES (NULL, %s, '%s');\n" % (
-            DEF_TABLE_NAME,
-            record['count'],
-            definition.replace("'", "\\'"),
-            )
-    return outstr
-
-def create_sql_tables():
-    global TERM_TABLE_NAME, DEF_TABLE_NAME
-    outstr = "DROP TABLE IF EXISTS %s; CREATE TABLE %s (id int, term varchar(255));\n" % (
-        TERM_TABLE_NAME, TERM_TABLE_NAME
-        )
-    outstr += "DROP TABLE IF EXISTS %s; CREATE TABLE %s (id int not null auto_increment, term_id int, definition text, primary key (id));\n" % (
-        DEF_TABLE_NAME, DEF_TABLE_NAME
-        )
-    return outstr
-
 if __name__ == "__main__":
     try:
         filename = sys.argv[1]
-    except Exception, e:
+    except:
         filename = "ruwiktionary-latest-pages-articles.xml"
-    outfile = open('out.sql','w')
 
-    outfile.write(create_sql_tables())
+    con = sqlite3.connect('wiki.db')
+    con.execute('DROP TABLE IF EXISTS word')
+    con.execute('DROP TABLE IF EXISTS def') 
+    con.execute('DROP TABLE IF EXISTS rel') 
+    con.execute('CREATE TABLE word(id INTEGER PRIMARY KEY autoincrement, name VARCHAR(80))')
+    con.execute('CREATE TABLE def(id INTEGER PRIMARY KEY autoincrement, word INTEGER, def TEXT)')
+    con.execute('CREATE TABLE rel(word INTEGER, def INTEGER, func VARCHAR(30), val VARCHAR(80))')
+    con.commit()
+    defre = re.compile('# (.*)')
+    defln = re.compile('\[\[([^\]]*)\]\]')
     for d in extract_dictionary(filename):
-        outfile.write(sqlify(d))
-    outfile.close()
+      if "# " not in d['text']:
+        print('Ignored: '+d['title'])
+        continue
+      try:
+        c=con.cursor()
+        c.execute('INSERT INTO word(name) VALUES (?)',(d['title'],))
+        word = c.lastrowid
+        for name, cont in split_sections(d['text'])['{{-ru-}}'].items():
+          #schema: word, [(meaning, [('syn',[synonyms_links, ...]),('ant',[antonyms_links, ...])]), ...]
+          rels = ['Синонимы','Антонимы','Гиперонимы','Гипонимы']
+          meanings = defre.findall(cont['Семантические свойства']['Значение'])
+          for i, defin in enumerate(meanings):
+            c.execute('INSERT INTO def(word, def) VALUES (?,?)',(word,defin))
+            defid = c.lastrowid
+            for rel in rels:
+              if rel in cont['Семантические свойства']:
+                cache_me = defre.findall(cont['Семантические свойства'][rel]);
+                if i not in cache_me: continue
+                rel_text = cache_me[i]
+                rel_links = defln.findall(rel_text)
+                for link in rel_links:
+                  c.execute('INSERT INTO rel(word, def, func, val) VALUES (?,?,?,?)',(word,defid,rel,link))
+            #todo: translations, related words, clean defs
+        
+      except:
+        print('Error: '+d['title'])
+        print(str(sys.exc_info()[1]))
+        con.rollback()
+        exit(1)
+    con.close()
