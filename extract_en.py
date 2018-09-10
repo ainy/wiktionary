@@ -7,6 +7,7 @@ import sys, re
 import sqlite3
 
 TAG_PREFIX = "{http://www.mediawiki.org/xml/export-0.10/}"
+MY_LANGS = set(['ru','cmn','de','fr','cs','ko','pt','nl','es','it'])
 
 def split_sections(text, n=2):
   a = re.split('\n\s*%s(.*)%s\s*\n'%('='*n,'='*n),'\n'+text)
