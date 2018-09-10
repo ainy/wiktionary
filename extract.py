@@ -6,15 +6,15 @@ from collections import defaultdict
 import sys, re
 import sqlite3
 
-TAG_PREFIX = "{http://www.mediawiki.org/xml/export-0.8/}"
+TAG_PREFIX = "{http://www.mediawiki.org/xml/export-0.10/}"
 
 def split_sections(text, n=1):
-  a = re.split('\n\s*%s ([^=]*) %s\s*\n'%('='*n,'='*n),'\n'+text)
+  a = re.split('\n\s*%s (.*) %s\s*\n'%('='*n,'='*n),'\n'+text)
   if len(a)>2:
     return dict(zip(a[1::2], [split_sections(t, n+1) or t for t in a[2::2]]))
 
 
-def extract_dictionary(filename):
+def extract_dictionary(filename='ruwiktionary-latest-pages-articles.xml'):
     context = etree.iterparse(filename)
     current_thing = defaultdict(str)
     for event, elem in context:
@@ -51,7 +51,12 @@ if __name__ == "__main__":
         c=con.cursor()
         c.execute('INSERT INTO word(name) VALUES (?)',(d['title'],))
         word = c.lastrowid
-        for name, cont in split_sections(d['text'])['{{-ru-}}'].items():
+        sections= split_sections(d['text'])['{{-ru-}}']
+        if not isinstance(sections, dict):
+          sections = [('',split_sections(sections, 3))]
+        else:
+          sections = sections.items()
+        for name, cont in sections:
           #schema: word, [(meaning, [('syn',[synonyms_links, ...]),('ant',[antonyms_links, ...])]), ...]
           rels = ['Синонимы','Антонимы','Гиперонимы','Гипонимы']
           meanings = defre.findall(cont['Семантические свойства']['Значение'])
@@ -67,10 +72,11 @@ if __name__ == "__main__":
                 for link in rel_links:
                   c.execute('INSERT INTO rel(word, def, func, val) VALUES (?,?,?,?)',(word,defid,rel,link))
             #todo: translations, related words, clean defs
-        
+          con.commit()
       except:
         print('Error: '+d['title'])
-        print(str(sys.exc_info()[1]))
+        #import traceback
+        #traceback.print_exc()
         con.rollback()
-        exit(1)
+        #exit(1)
     con.close()
