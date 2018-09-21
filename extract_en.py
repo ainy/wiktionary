@@ -10,12 +10,12 @@ TAG_PREFIX = "{http://www.mediawiki.org/xml/export-0.10/}"
 MY_LANGS = set(['ru','cmn','de','fr','cs','ko','pt','nl','es','it'])
 
 def split_sections(text, n=2):
-  a = re.split('\n\s*%s(.*)%s\s*\n'%('='*n,'='*n),'\n'+text)
+  a = re.split('\n\s*%s([^=].*[^=])%s\s*\n'%('='*n,'='*n),'\n'+text)
   if len(a)>2:
     return defaultdict(unicode, zip(a[1::2], [split_sections(t, n+1) or t for t in a[2::2]]))
   return unicode(text)
 
-def extract_dictionary(filename):
+def extract_dictionary(filename='enwiktionary-latest-pages-articles.xml'):
     context = etree.iterparse(filename)
     current_thing = defaultdict(str)
     for event, elem in context:
@@ -28,6 +28,11 @@ def extract_dictionary(filename):
                 while elem.getparent() is not None:
                     del elem.getparent()[0]
 
+deftr = re.compile('\{\{trans-top\|([^|}]*)')
+deflg = re.compile('\{\{t\+?\|([^|]*)\|([^|}]*)')
+defre = re.compile('# (.*)')
+defln = re.compile('\[\[([^\]]*)\]\]')
+
 if __name__ == "__main__":
     total = 5255582.
     try:
@@ -37,16 +42,12 @@ if __name__ == "__main__":
 
     con = sqlite3.connect('enwikt.db')
     con.execute('DROP TABLE IF EXISTS word')
-    con.execute('DROP TABLE IF EXISTS def') 
-    con.execute('DROP TABLE IF EXISTS rel') 
+    con.execute('DROP TABLE IF EXISTS def')
+    con.execute('DROP TABLE IF EXISTS rel')
     con.execute('CREATE TABLE word(name VARCHAR(80))')
     con.execute('CREATE TABLE def(word INTEGER, def TEXT)')
     con.execute('CREATE TABLE rel(word INTEGER, def INTEGER, func VARCHAR(10), val VARCHAR(80))')
     con.commit()
-    deftr = re.compile('\{\{trans-top\|([^|}]*)')
-    deflg = re.compile('\{\{t\+?\|([^|]*)\|([^|}]*)')
-    defre = re.compile('# (.*)')
-    defln = re.compile('\[\[([^\]]*)\]\]')
     ds = 0
     ts = 0
     for n, d in enumerate(extract_dictionary(filename)):
